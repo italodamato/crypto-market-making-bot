@@ -10,6 +10,7 @@ class Bot():
         self.pair = pair
         self.orders = {}
         self.last_show_balances_ts = datetime.datetime.utcnow() + datetime.timedelta(seconds=-30)
+        self.force_fetch_orderbook = False
 
     def fetch_orderbook(self) -> None:
         headers = {
@@ -25,11 +26,20 @@ class Bot():
 
         url = f'https://api.rhino.fi/market-data/book/{params["symbol"]}/{params["precision"]}/{params["length"]}'
 
-        response = requests.request(
-            "GET",
-            url,
-            headers=headers,
-        )
+        try:
+            response = requests.request(
+                "GET",
+                url,
+                headers=headers,
+            )
+        except requests.exceptions.Timeout as e:
+            print(e)
+            if self.order_book is None:
+                self.force_fetch_orderbook = True
+                return
+        except requests.exceptions.RequestException as e:
+            raise SystemExit(e)
+        
         if response.status_code == 200:
             res = response.json()
             self.order_book = {'bids': res[:params["length"]], 'asks': res[params["length"]+1:]}
@@ -84,6 +94,9 @@ if __name__ == "__main__":
     bot = Bot(pair="ETH:USDT", balances=[10, 2000])
     while True:
         bot.fetch_orderbook()
+        if bot.force_fetch_orderbook:
+            time.sleep(5)
+            continue
         bot.generate_order_specs()
         bot.place_orders()
         bot.check_filled()
